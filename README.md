@@ -2,7 +2,7 @@
 ### this as made for divoom max but should work for divoom timebox aswell, this is based on documenation found by some timebox developers, linked below
 
 
-this took way to long time, **fuck divoom**
+this took way too long time, **fuck divoom**
 
 actually useful stuff (not you divoom), thanks for the documentation:  
 - https://github.com/RomRider/node-divoom-timebox-evo/blob/master/PROTOCOL.md  

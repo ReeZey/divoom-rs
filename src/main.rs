@@ -2,14 +2,6 @@ use serial::windows::COMPort;
 use std::{io::{Read, Write}, sync::Arc, time::{Duration, SystemTime}};
 use tokio::{sync::Mutex, time};
 
-//
-// this took way to long time, fuck divoom
-//
-// actually useful stuff, not you divoom
-// https://github.com/RomRider/node-divoom-timebox-evo/blob/master/PROTOCOL.md
-// https://github.com/d03n3rfr1tz3/hass-divoom/blob/main/custom_components/divoom/devices/divoom.py
-//
-
 #[tokio::main]
 async fn main() {
     let port: COMPort = serial::open("COM4").unwrap();
