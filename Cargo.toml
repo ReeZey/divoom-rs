@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 serial = "0.4"
 tokio = { version = "1", features = ["full"] }
+bitvec = "1"
+rand = "0.8"
+image = "0.25"
