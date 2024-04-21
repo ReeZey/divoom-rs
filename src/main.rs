@@ -2,145 +2,23 @@ mod utils;
 
 use bitvec::array::BitArray;
 
+use image::{DynamicImage, ImageBuffer, Rgba};
 use serial::windows::COMPort;
 use utils::{best_color_match, divoom_command, littlehex, Color, DivoomCommand};
-use windows_capture::{capture::GraphicsCaptureApiHandler, encoder::ImageEncoder, frame::{Frame, ImageFormat}, graphics_capture_api::InternalCaptureControl, monitor::Monitor, settings::{ColorFormat, CursorCaptureSettings, DrawBorderSettings, Settings}};
-use std::{io::{self, Read, Write}, sync::Arc, time::{Duration, SystemTime}};
-use tokio::{sync::Mutex, time};
+use std::{fs::File, io::{BufReader, Read}, sync::Arc, time::{Duration, SystemTime}};
+use tokio::sync::Mutex;
 use bitvec::bitvec;
 use bitvec::prelude::*;
 
 const DEBUG: bool = false;
 
-struct Capture {
-    port: COMPort,
-    last: SystemTime
-}
-
-
-impl GraphicsCaptureApiHandler for Capture {
-    type Flags = String;
-
-    type Error = Box<dyn std::error::Error + Send + Sync>;
-
-    // Function that will be called to create the struct. The flags can be passed from settings.
-    fn new(_message: Self::Flags) -> Result<Self, Self::Error> {
-        let port: COMPort = COMPort::open("COM4").unwrap();
-        
-        futures::executor::block_on(async {
-            tokio::time::sleep(Duration::from_secs(6)).await;
-        });
-
-        Ok(Self { port, last: SystemTime::now() })
-    }
-
-    // Called every time a new frame is available.
-    fn on_frame_arrived(
-        &mut self,
-        frame: &mut Frame,
-        _capture_control: InternalCaptureControl,
-    ) -> Result<(), Self::Error> {
-        io::stdout().flush()?;
-
-        let mut binding = frame.buffer().unwrap();
-        let buffer = binding.as_raw_buffer();
-
-        let mut cool_buffer = vec![];
-
-        for y in 0..32 {
-            for x in 0..32 {
-
-                let base_x = x * 60;
-                let base_y = (y * 33) * 1920;
-                let base_index = base_x + base_y;
-
-                let mut total_r: u32 = 0;
-                let mut total_g: u32 = 0;
-                let mut total_b: u32 = 0;
-                for color_x in 0..60 {
-                    for color_y in 0..32 {
-                        let next_index = (base_index + color_x + (color_y * 1920)) * 4;
-                        
-                        let r = buffer[next_index + 0];
-                        let g = buffer[next_index + 1];
-                        let b = buffer[next_index + 2];
-
-                        total_r += r as u32;
-                        total_g += g as u32;
-                        total_b += b as u32;
-                    }
-                }
-
-                total_r /= 60;
-                total_r /= 32;
-
-                total_g /= 60;
-                total_g /= 32;
-
-                total_b /= 60;
-                total_b /= 32;
-
-                cool_buffer.push(Color::new(total_r as u8, total_g as u8, total_b as u8))
-            }
-        }
-
-        /*
-        for y in 0..32 {
-            for x in 0..32 {
-                let index = (((x + 1920 / 2) - 16) + ((y + 1080 / 2) - 16) * 1920) * 4; //+ width_offset + height_offset;
-
-                let r = buffer[index + 0];
-                let g = buffer[index + 1];
-                let b = buffer[index + 2];
-
-                cool_buffer.push(Color::new(r, g, b))
-            }
-        }
-        */
-
-        futures::executor::block_on(async {
-            let now = SystemTime::now();
-            if now.duration_since(self.last).unwrap().as_millis() > 20 {
-                //println!("image");
-
-                send_image(&mut self.port, cool_buffer).await;
-
-                //TODO: fix
-                let mut run = true;
-                while run {
-                    let mut buffer = vec![0; 1024];
-                    let result = self.port.read(&mut buffer);
-                    match result {
-                        Ok(len) => {
-                            buffer.truncate(len);
-                        }
-                        Err(_err) => {
-                            //println!("error: {}", err);
-                            run = false;
-                        }
-                    }
-                }
-
-                self.last = SystemTime::now();
-            }
-        });
-
-        //capture_control.stop();
-
-        Ok(())
-    }
-
-    // Optional handler called when the capture item (usually a window) closes.
-    fn on_closed(&mut self) -> Result<(), Self::Error> {
-        println!("Capture Session Closed");
-
-        Ok(())
-    }
-}
 
 #[tokio::main]
 async fn main() {
-    /*
+    let port: COMPort = COMPort::open("COM3").unwrap();
+
+    tokio::time::sleep(Duration::from_secs(6)).await;
+
     let mut port_locked = Arc::new(Mutex::new(port));
 
     // reader
@@ -176,27 +54,91 @@ async fn main() {
         }
     });
 
-    */
+    let final_text = "this    text    will    write   itself";
 
-    //let mut rand = ThreadRng::default();
-
-    //divoom_command(&mut port_locked, DivoomCommand::UpdateBrightness, vec![100]).await;
+    let mut index = 0;
+    let mut forward = true;
     
-    let monitor = Monitor::primary().unwrap();
+    //println!("{:?}", buffer);
+    loop {
+        if index >= final_text.len() {
+            forward = false;
+        }
 
-    // Setup settings for capturing video
-    let capture_settings = Settings::new(
-        monitor,
-        windows_capture::settings::CursorCaptureSettings::Default,
-        windows_capture::settings::DrawBorderSettings::WithoutBorder,
-        windows_capture::settings::ColorFormat::Rgba8,
-        "aa".to_string()
-    ).unwrap();
+        if index == 0 {
+            forward = true;
+        }
+        
+        match forward {
+            true => index += 1,
+            false => index -= 1
+        }
 
-    Capture::start(capture_settings).expect("Screen Capture Failed");
+        let mut colors = vec![Color::default(); 1024];
+        print_text(&final_text.split_at(index).0, &mut colors);
+
+        send_image(&mut port_locked, colors).await;
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
 }
 
-async fn send_image(port: &mut COMPort, pixels: Vec<Color>) {
+fn print_text(text: &str, colors: &mut Vec<Color>) {
+    let chars = text.chars();
+
+    let mut font_image = image::load(BufReader::new(File::open("font.png").unwrap()), image::ImageFormat::Png).unwrap();
+    let mut numbers_image = image::load(BufReader::new(File::open("numbers.png").unwrap()), image::ImageFormat::Png).unwrap();
+
+    for (index, char) in chars.into_iter().enumerate() {
+        let x = index as u32 % 8;
+        let y = index as u32 / 8;
+
+        if char.is_whitespace() {
+            continue;
+        }
+
+        if char.is_numeric() {
+            add_letter(char as u32, x * 4, y * 6, &mut numbers_image, colors);
+        } else {
+            add_letter(alpha_to_number(char), x * 4, y * 6, &mut font_image, colors);
+        }
+    }
+}
+
+fn alpha_to_number(character: char) -> u32 {
+    return "abcdefghijklnmopqrstuvwxyz".chars().position(|c| c == character.to_ascii_lowercase()).unwrap() as u32;
+}
+
+fn add_letter(symbol: u32, place_x: u32, place_y: u32, symbols: &mut DynamicImage, colors: &mut Vec<Color>) {
+
+    let symbol_image = symbols.as_mut_rgba8().unwrap();
+    let symbol_buffer = symbol_image.to_vec();
+
+    //println!("{:?}", symbol_buffer);
+
+    let symbol_image_width = symbols.width();
+
+    let start_index = symbol * 3 * 4;
+
+    for y in 0..5 {
+        for x in 0..3 {
+            let index = (x + y * symbol_image_width) * 4;
+
+            let r = symbol_buffer[(start_index + index + 0) as usize];
+            let g = symbol_buffer[(start_index + index + 1) as usize];
+            let b = symbol_buffer[(start_index + index + 2) as usize];
+            let a = symbol_buffer[(start_index + index + 3) as usize];
+
+            if a == 0 {
+                continue;
+            }
+            
+            colors[(place_x + x + (place_y + y) * 32) as usize] = Color::new(r, g, b);
+        }
+    }
+}
+
+async fn send_image(port: &mut Arc<Mutex<COMPort>>, pixels: Vec<Color>) {
     let mut color_array: Vec<Color> = vec![];
     let mut pixel_array: Vec<u8> = vec![];
     for pixel_color in pixels {

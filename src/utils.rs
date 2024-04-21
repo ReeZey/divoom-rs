@@ -28,7 +28,13 @@ impl Color {
     }
 }
 
-pub async fn divoom_command(port: &mut COMPort, command: DivoomCommand, args: Vec<u8>) {
+impl Default for Color {
+    fn default() -> Self {
+        Self { r: 0, g: 0, b: 0 }
+    }
+}
+
+pub async fn divoom_command(port: &mut Arc<Mutex<COMPort>>, command: DivoomCommand, args: Vec<u8>) {
     let length = args.len() + 3;
 
     let mut payload = vec![];
@@ -38,7 +44,7 @@ pub async fn divoom_command(port: &mut COMPort, command: DivoomCommand, args: Ve
 
     let formatted = format_payload(payload);
     
-    port.write(&formatted).unwrap();
+    port.lock().await.write(&formatted).unwrap();
 }
 
 pub fn format_payload(payload: Vec<u8>) -> Vec<u8> {
