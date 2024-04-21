@@ -13,9 +13,9 @@ pub(crate) enum DivoomCommand {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Color {
-    r: u8,
-    g: u8,
-    b: u8
+    pub r: u8,
+    pub g: u8,
+    pub b: u8
 }
 
 impl Color {
@@ -28,7 +28,7 @@ impl Color {
     }
 }
 
-pub async fn divoom_command(port: &mut Arc<Mutex<COMPort>>, command: DivoomCommand, args: Vec<u8>) {
+pub async fn divoom_command(port: &mut COMPort, command: DivoomCommand, args: Vec<u8>) {
     let length = args.len() + 3;
 
     let mut payload = vec![];
@@ -38,13 +38,16 @@ pub async fn divoom_command(port: &mut Arc<Mutex<COMPort>>, command: DivoomComma
 
     let formatted = format_payload(payload);
     
-    port.lock().await.write(&formatted).unwrap();
+    port.write(&formatted).unwrap();
 }
 
 pub fn format_payload(payload: Vec<u8>) -> Vec<u8> {
     let mut formatted: Vec<u8> = vec![0x01];
 
     formatted.extend(&payload);
+
+    //println!("PAYLOAD LENGTH: {}", payload.len());
+
     formatted.extend(checksum(payload));
 
     formatted.append(&mut vec![0x02]);
@@ -58,4 +61,33 @@ pub fn checksum(payload: Vec<u8>) -> Vec<u8> {
 
 pub fn littlehex(hex: u16) -> Vec<u8> {
     return vec![hex as u8, (hex >> 8) as u8];
+}
+
+pub struct BestColor {
+    pub index: usize,
+    pub diff: u32,
+}
+
+impl Default for BestColor {
+    fn default() -> Self {
+        Self { index: 0, diff: 255*3 }
+    }
+}
+
+pub fn best_color_match(color: &Color, color_array: &Vec<Color>) -> BestColor {
+    let mut best = BestColor::default();
+
+    for (i, c) in color_array.iter().enumerate() {
+        let mut diff = 0;
+        diff += c.r.abs_diff(color.r) as u32;
+        diff += c.g.abs_diff(color.g) as u32;
+        diff += c.b.abs_diff(color.b) as u32;
+
+        if diff < best.diff {
+            best.diff = diff;
+            best.index = i;
+        }
+    }
+
+    return best;
 }
